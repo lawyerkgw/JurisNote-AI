@@ -34,9 +34,15 @@ def get_ai_analysis(case_text):
         2. 3단계(소분류)는 법리적 쟁점을 가장 잘 나타내는 용어로 직접 생성하세요.
         3. 만약 제공된 체계에 적합한 것이 전혀 없다면 '기타' 섹션을 활용하세요.
         4. 다중 분류가 필요한 경우 '|'로 구분하세요. (예: 민사법>채권총론>불법행위 | 형사법>형법각칙>사기)
-
+        
         [표준 분류 체계]
         {taxonomy_str}
+        
+        [작성 규칙: 논리적 대응]
+        1. **쟁점과 요지의 일치**: [issues]에서 제기한 법적 쟁점의 순서와 [holdings]에서 답하는 판결 요지의 순서를 반드시 일치시키세요.
+           (예: 쟁점이 '1. ... 2. ...' 이라면 판결요지도 '1. ... 2. ...'로 대응해야 함)
+        2. **사실관계 기반**: [facts]는 [issues]가 발생하게 된 구체적 경위를 요약하세요.
+        3. **법적 근거**: [laws]는 해당 쟁점을 해결하기 위해 법원이 적용한 실무 법령을 기재하세요.
 
         [JSON 구조]
         {{
@@ -45,9 +51,9 @@ def get_ai_analysis(case_text):
             "title": "사건명 (예: 손해배상(기))",
             "date": "YYYY-MM-DD",
             "facts": "사실관계 요약",
-            "issues": "법적 쟁점 (다수일 경우 번호 부여)",
+            "issues": "법적 쟁점 (다수일 경우 번호 부여): 1. 쟁점A\\n2. 쟁점B",
             "laws": "직접 관련된 관련 법률 조문",
-            "holdings": "판결 요지",
+            "holdings": "판결 요지: 1. 쟁점A에 대한 판단\\n2. 쟁점B에 대한 판단",
             "insight": "실무적 의의 및 주의사항"
         }}
 
@@ -108,30 +114,41 @@ if menu == "판례 분석 및 등록":
         with st.form("edit_and_save_form"):
             col1, col2 = st.columns([1, 1])
         
+            # --- [기능 1] 내부의 입력창 레이아웃 수정 부분 ---
             with col1:
-                # [수정] 사건번호를 ID로 사용하기 위한 입력칸 추가
-                final_case_no = st.text_input("🆔 사건번호 (데이터베이스 ID)", value=res.get('case_no', ''), help="대법원 사건번호(예: 2023다12345)가 정확한지 확인하세요.")
+                # 🆔 사건번호 및 분류
+                final_case_no = st.text_input("🆔 사건번호 (데이터베이스 ID)", value=res.get('case_no', ''))
                 
                 st.caption("📖 **표준 분류 가이드**")
                 with st.expander("사용 가능 카테고리 보기"):
                     st.write(LEGAL_TAXONOMY)
                 
                 final_cats = st.text_input("📁 분류 (1단계>2단계>3단계 | 다중분류는 '|' 구분)", value=res['categories'])
-                final_facts = st.text_area("📍 사실관계 (사건의 경위)", value=res.get('facts', ''), height=150)
-                final_issues = st.text_area("❓ 법적 쟁점 (쟁점이 여러 개인 경우 번호별 정리)", value=res.get('issues', ''), height=200)
-                final_laws = st.text_area("📜 관련법률 (직접 관련된 조문)", value=res.get('laws', ''), height=100)
                 
+                st.divider() # 시각적 구분선
+                
+                # ❓ 질문(쟁점) 배치
+                final_issues = st.text_area("❓ 법적 쟁점 (Question)", value=res.get('issues', ''), height=300, help="판결에서 다루는 주요 법적 질문들입니다.")
+                
+                # 📍 사실관계는 아래쪽으로 배치
+                final_facts = st.text_area("📍 사실관계 (사건의 경위)", value=res.get('facts', ''), height=150)
+            
             with col2:
-                # 날짜 파싱 안전 처리
+                # 📅 기본 정보
                 try:
                     target_date = datetime.strptime(res['date'], "%Y-%m-%d")
                 except:
                     target_date = datetime.now()
-                
                 final_date = st.date_input("📅 선고 일자", target_date)
-                # 사건명도 수정 가능하도록 배치
                 final_title = st.text_input("⚖️ 사건명", value=res['title'])
-                final_holdings = st.text_area("📢 판결요지 (법원의 판단 핵심)", value=res.get('holdings', ''), height=200)
+                
+                st.divider() # 왼쪽과 높이를 맞추기 위한 구분선
+                
+                # 📢 답변(판결요지) 배치 -> 왼쪽의 쟁점과 나란히 위치하게 됨
+                final_holdings = st.text_area("📢 판결요지 (Answer)", value=res.get('holdings', ''), height=300, help="왼쪽 쟁점 번호에 대응하는 법원의 판단입니다.")
+                
+                # 조문 및 의의
+                final_laws = st.text_area("📜 관련법률 (직접 관련된 조문)", value=res.get('laws', ''), height=100)
                 final_insight = st.text_area("💡 실무적 의의 (유의사항 및 해설)", value=res.get('insight', ''), height=150)
                 case_url = st.text_input("🔗 판결문 원문 URL", placeholder="https://...")
             
@@ -184,44 +201,58 @@ elif menu == "나의 공부노트 (조회)":
         df = pd.DataFrame(data)
         
         if not df.empty:
-            # 사이드바 필터
+            # 사이드바 필터 및 검색
+            st.sidebar.header("🔍 필터링 및 검색")
             cat1_list = ["전체"] + list(LEGAL_TAXONOMY.keys())
-            selected_cat1 = st.sidebar.selectbox("1단계 분류 필터", cat1_list)
-            search_q = st.sidebar.text_input("사건명/내용 검색")
+            selected_cat1 = st.sidebar.selectbox("1단계 분류 선택", cat1_list)
             
-            # 필터링
+            search_q = st.sidebar.text_input("사건번호/사건명/쟁점 검색")
+            
+            # 필터링 로직
             if selected_cat1 != "전체":
                 df = df[df['분류'].str.contains(selected_cat1)]
             if search_q:
-                # 여러 열에서 검색 수행
-                df = df[df['사건명'].str.contains(search_q) | 
-                        df['쟁점'].str.contains(search_q) | 
-                        df['판결요지'].str.contains(search_q)]
+                # ID(사건번호), 사건명, 쟁점 열에서 검색
+                df = df[df['ID'].str.contains(search_q) | 
+                        df['사건명'].str.contains(search_q) | 
+                        df['쟁점'].str.contains(search_q)]
             
-            # 판례 카드 출력
+            # 조회 화면 구성
+            st.write(f"총 **{len(df)}**건의 판례가 검색되었습니다.")
+            
             for _, row in df.iterrows():
-                with st.expander(f"⚖️ [{row['선고일자']}] {row['사건명']}"):
-                    # 분류 태그 표시
+                # 사건번호와 사건명을 결합하여 카드 제목 생성
+                with st.expander(f"⚖️ [{row['ID']}] {row['사건명']} ({row['선고일자']})"):
+                    # 태그 레이아웃
                     tags = row['분류'].split('|')
-                    tag_html = "".join([f'<span style="background-color:#eff6ff; color:#1e40af; padding:3px 10px; border-radius:15px; margin-right:5px; font-size:12px; border:1px solid #bfdbfe;">{t.strip()}</span>' for t in tags])
+                    tag_html = "".join([f'<span style="background-color:#f0f2f6; color:#31333F; padding:3px 10px; border-radius:15px; margin-right:5px; font-size:12px; border:1px solid #d1d5db;">{t.strip()}</span>' for t in tags])
                     st.markdown(tag_html, unsafe_allow_html=True)
-                    st.write("") # 간격 조절
-                    
-                    # 2단 레이아웃으로 상세 내용 표시
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"**📍 사실관계**\n\n{row['사실관계']}")
-                        st.markdown(f"**❓ 법적 쟁점**\n\n{row['쟁점']}")
-                        st.markdown(f"**📜 관련법률**\n\n{row['관련법률']}")
-                    with col2:
-                        st.markdown(f"**📢 판결요지**\n\n{row['판결요지']}")
-                        st.markdown(f"**💡 실무적 의의**\n\n{row['실무적의의']}")
+                    st.write("") 
+
+                    # 1. 사실관계 (상단에 넓게 배치)
+                    st.info(f"**📍 사실관계 (사건의 경위)**\n\n{row['사실관계']}")
+
+                    # 2. 쟁점 vs 판결요지 (핵심 비교 레이아웃)
+                    col_q, col_a = st.columns(2)
+                    with col_q:
+                        st.markdown(f"### ❓ 법적 쟁점\n{row['쟁점']}")
+                    with col_a:
+                        st.markdown(f"### 📢 법원의 판단\n{row['판결요지']}")
                     
                     st.divider()
+
+                    # 3. 법령 및 의의 (하단 레이아웃)
+                    col_ext1, col_ext2 = st.columns([1, 2])
+                    with col_ext1:
+                        st.markdown(f"**📜 관련 법령**\n\n{row['관련법률']}")
+                    with col_ext2:
+                        st.warning(f"**💡 실무적 의의**\n\n{row['실무적의의']}")
+
+                    # 4. 메모 및 원문 링크
                     if row['내메모']:
-                        st.info(f"**📝 나의 메모**\n\n{row['내메모']}")
+                        st.success(f"**📝 나의 메모:** {row['내메모']}")
                     
                     if row['URL']:
-                        st.link_button("⚖️ 대법원 판결문 원문 보기", row['URL'])
+                        st.link_button(f"🔗 {row['ID']} 원문 보기", row['URL'])
         else:
-            st.info("아직 저장된 판례가 없습니다. '판례 분석 및 등록' 메뉴에서 첫 판례를 등록해 보세요!")
+            st.info("데이터베이스가 비어 있습니다. 판례를 먼저 등록해 주세요.")

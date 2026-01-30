@@ -13,35 +13,32 @@ st.set_page_config(page_title="JurisNote AI - 법률 전문가용 판례 노트"
 def get_ai_analysis(case_text):
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        # 최신 모델 사용 (fallback 로직 적용 가능)
         model = genai.GenerativeModel('gemini-2.5-flash-lite')
         
         prompt = f"""
-        당신은 대한민국 대법원 판례 전문 분석가입니다. 아래 판례 내용을 분석하여 **반드시 JSON 형식**으로만 응답하세요.
-        
-        1. 분류 가이드:
-           - 1단계(cat1): 민사법, 형사법, 행정법, 헌법, 지식재산권법, 기타 중 선택
-           - 2단계(cat2): 중분류 (예: 채권법, 형법각칙 등)
-           - 3단계(cat3): 소분류 (예: 손해배상, 사기죄 등)
-        2. 다중 분류: 만약 판례가 여러 분야에 걸쳐 있다면, 각 카테고리를 '|'로 구분하여 작성하세요.
-           예: "민사법>채권법>불법행위 | 민사법>민사소송법>상계항변"
-        
+        당신은 대한민국 대법원 판례 분석 전문가입니다. 판례를 분석하여 반드시 아래 JSON 형식으로만 답하세요.
+        쟁점이 여러 개인 경우 각 항목 내에서 '1. ..., 2. ...' 형태로 번호를 매겨 서술하세요.
+
         [JSON 구조]
         {{
             "categories": "1단계>2단계>3단계 | 1단계>2단계>3단계",
             "title": "사건명",
-            "date": "선고일자(YYYY-MM-DD)",
-            "summary": "판례 요지 3줄 요약",
-            "insight": "실무적 유의사항 및 의의"
+            "date": "YYYY-MM-DD",
+            "facts": "사실관계 요약",
+            "issues": "법적 쟁점 (다수일 경우 번호 부여)",
+            "laws": "직접 관련된 관련 법률 조문",
+            "holdings": "판결 요지",
+            "insight": "실무적 의의 및 주의사항"
         }}
-        
+
         판례 내용: {case_text}
         """
         response = model.generate_content(prompt)
-        # JSON 부분만 추출 (마크다운 태그 제거)
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
-        st.error(f"AI 분석 중 오류 발생: {e}")
+        st.error(f"AI 분석 중 오류: {e}")
         return None
 
 # 구글 시트 인증 함수
@@ -76,38 +73,79 @@ if menu == "판례 분석 및 등록":
             with st.spinner("AI 전문가가 법리를 검토 중입니다..."):
                 res = get_ai_analysis(case_content)
                 if res:
+                    # 세션에 결과 저장
                     st.session_state['temp_res'] = res
         else:
-            st.warning("내용을 입력해주세요.")
+            st.warning("분석할 내용을 입력해주세요.")
 
-    # 분석 결과가 세션에 있을 때 표시
+    # AI 분석 결과가 세션에 있을 때만 편집 및 저장 화면 표시
     if 'temp_res' in st.session_state:
         res = st.session_state['temp_res']
         st.markdown("---")
-        col1, col2 = st.columns([2, 1])
+        st.subheader(f"🔍 AI 분석 결과 검토: {res['title']}")
         
-        with col1:
-            st.subheader(f"🔍 분석 결과: {res['title']}")
-            final_cats = st.text_input("분류 (수정 가능, '|'로 다중 분류)", value=res['categories'])
-            final_summary = st.text_area("AI 요약 요지", value=res['summary'], height=150)
-            final_insight = st.text_area("실무적 의의", value=res['insight'], height=100)
-        
-        with col2:
-            st.date_input("선고 일자", datetime.strptime(res['date'], "%Y-%m-%d"))
-            user_memo = st.text_area("📝 나의 추가 메모", placeholder="나중에 기억할 포인트 작성...")
-            case_url = st.text_input("🔗 판결문 원문 URL")
+        # 편집을 위한 양식(Form) 구성
+        with st.form("edit_and_save_form"):
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                final_cats = st.text_input("📁 분류 (1단계>2단계>3단계 | 다중분류는 '|' 구분)", value=res['categories'])
+                final_facts = st.text_area("📍 사실관계 (사건의 경위)", value=res.get('facts', ''), height=150)
+                # 다중 쟁점 대응을 위해 넓은 칸 제공
+                final_issues = st.text_area("❓ 법적 쟁점 (쟁점이 여러 개인 경우 번호별 정리)", value=res.get('issues', ''), height=200)
+                final_laws = st.text_area("📜 관련법률 (직접 관련된 조문)", value=res.get('laws', ''), height=100)
+                
+            with col2:
+                # 날짜 파싱 안전 처리
+                try:
+                    target_date = datetime.strptime(res['date'], "%Y-%m-%d")
+                except:
+                    target_date = datetime.now()
+                
+                final_date = st.date_input("📅 선고 일자", target_date)
+                final_holdings = st.text_area("📢 판결요지 (법원의 판단 핵심)", value=res.get('holdings', ''), height=200)
+                final_insight = st.text_area("💡 실무적 의의 (유의사항 및 해설)", value=res.get('insight', ''), height=150)
+                case_url = st.text_input("🔗 판결문 원문 URL", placeholder="https://...")
+            
+            st.divider()
+            user_memo = st.text_area("📝 나의 학습 노트 (추가 메모)", placeholder="나만의 공부 내용이나 판례의 특징을 기록하세요.")
+            
+            # 저장 버튼
+            submit_btn = st.form_submit_button("💾 데이터베이스에 최종 저장")
 
-        if st.button("💾 데이터베이스에 저장"):
-            try:
-                # 시트 저장 데이터 순서: ID(일자+제목), 선고일자, 사건명, 분류, 요약, 의의, 메모, URL
-                row = [res['date'] + "_" + res['title'], res['date'], res['title'], final_cats, final_summary, final_insight, user_memo, case_url]
-                sheet.append_row(row)
-                st.success("성공적으로 저장되었습니다!")
-                del st.session_state['temp_res']
-                st.rerun()
-            except:
-                st.error("저장 중 오류가 발생했습니다.")
+            if submit_btn:
+                try:
+                    # 시트 저장 데이터 순서 업데이트 (A~K열: 11개 항목)
+                    # ID, 선고일자, 사건명, 분류, 사실관계, 쟁점, 관련법률, 판결요지, 실무적의의, 내메모, URL
+                    row = [
+                        f"{final_date}_{res['title']}", # A: ID
+                        str(final_date),               # B: 선고일자
+                        res['title'],                   # C: 사건명
+                        final_cats,                     # D: 분류
+                        final_facts,                    # E: 사실관계
+                        final_issues,                   # F: 쟁점
+                        final_laws,                     # G: 관련법률
+                        final_holdings,                 # H: 판결요지
+                        final_insight,                  # I: 실무적의의
+                        user_memo,                      # J: 내메모
+                        case_url                        # K: URL
+                    ]
+                    
+                    if sheet:
+                        sheet.append_row(row)
+                        st.success(f"✅ '{res['title']}' 판례가 성공적으로 저장되었습니다!")
+                        # 저장 후 세션 초기화 및 페이지 새로고침
+                        del st.session_state['temp_res']
+                        st.rerun()
+                    else:
+                        st.error("구글 시트 연결을 확인해주세요.")
+                except Exception as e:
+                    st.error(f"저장 중 오류가 발생했습니다: {e}")
 
+        # 분석 결과 초기화 버튼 (폼 외부에 배치)
+        if st.button("❌ 분석 결과 취소"):
+            del st.session_state['temp_res']
+            st.rerun()
 # --- 4. [기능 2] 나의 공부노트 (조회) ---
 elif menu == "나의 공부노트 (조회)":
     st.title("📚 카테고리별 판례 복기")

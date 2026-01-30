@@ -167,6 +167,7 @@ if menu == "판례 분석 및 등록":
         if st.button("❌ 분석 결과 취소"):
             del st.session_state['temp_res']
             st.rerun()
+            
 # --- 4. [기능 2] 나의 공부노트 (조회) ---
 elif menu == "나의 공부노트 (조회)":
     st.title("📚 카테고리별 판례 복기")
@@ -176,39 +177,44 @@ elif menu == "나의 공부노트 (조회)":
         df = pd.DataFrame(data)
         
         if not df.empty:
-            # 1단계 대분류 필터 구성
-            cat1_list = ["전체", "민사법", "형사법", "행정법", "헌법", "지식재산권법", "기타"]
+            # 사이드바 필터
+            cat1_list = ["전체"] + list(LEGAL_TAXONOMY.keys())
             selected_cat1 = st.sidebar.selectbox("1단계 분류 필터", cat1_list)
-            
-            # 검색어 필터
             search_q = st.sidebar.text_input("사건명/내용 검색")
             
-            # 필터링 로직 (다중 분류 대응)
+            # 필터링
             if selected_cat1 != "전체":
                 df = df[df['분류'].str.contains(selected_cat1)]
             if search_q:
-                df = df[df['사건명'].str.contains(search_q) | df['AI요약'].str.contains(search_q)]
+                # 여러 열에서 검색 수행
+                df = df[df['사건명'].str.contains(search_q) | 
+                        df['쟁점'].str.contains(search_q) | 
+                        df['판결요지'].str.contains(search_q)]
             
-            # 카드 형태로 판례 표시
+            # 판례 카드 출력
             for _, row in df.iterrows():
-                with st.container():
-                    st.markdown(f"### [{row['선고일자']}] {row['사건명']}")
-                    # 태그 표시
+                with st.expander(f"⚖️ [{row['선고일자']}] {row['사건명']}"):
+                    # 분류 태그 표시
                     tags = row['분류'].split('|')
-                    tag_html = "".join([f'<span style="background-color:#e1e4e8; color:#0366d6; padding:2px 8px; border-radius:10px; margin-right:5px; font-size:12px;">{t.strip()}</span>' for t in tags])
+                    tag_html = "".join([f'<span style="background-color:#eff6ff; color:#1e40af; padding:3px 10px; border-radius:15px; margin-right:5px; font-size:12px; border:1px solid #bfdbfe;">{t.strip()}</span>' for t in tags])
                     st.markdown(tag_html, unsafe_allow_html=True)
+                    st.write("") # 간격 조절
                     
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.info(f"**📍 판례 요지**\n\n{row['AI요약']}")
-                    with c2:
-                        st.warning(f"**💡 실무적 의의**\n\n{row['의의']}")
+                    # 2단 레이아웃으로 상세 내용 표시
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown(f"**📍 사실관계**\n\n{row['사실관계']}")
+                        st.markdown(f"**❓ 법적 쟁점**\n\n{row['쟁점']}")
+                        st.markdown(f"**📜 관련법률**\n\n{row['관련법률']}")
+                    with col2:
+                        st.markdown(f"**📢 판결요지**\n\n{row['판결요지']}")
+                        st.markdown(f"**💡 실무적 의의**\n\n{row['실무적의의']}")
                     
+                    st.divider()
                     if row['내메모']:
-                        st.success(f"**📝 내 메모:** {row['내메모']}")
+                        st.info(f"**📝 나의 메모**\n\n{row['내메모']}")
                     
                     if row['URL']:
                         st.link_button("⚖️ 대법원 판결문 원문 보기", row['URL'])
-                    st.divider()
         else:
-            st.info("아직 저장된 판례가 없습니다.")
+            st.info("아직 저장된 판례가 없습니다. '판례 분석 및 등록' 메뉴에서 첫 판례를 등록해 보세요!")

@@ -168,7 +168,7 @@ if menu == "판례 분석 및 등록":
                     else:
                         st.error("구글 시트 연결을 확인해주세요.")
                 except Exception as e:
-                    st.error(f"저장 중 오류가 발생했습니다: {e}")}")
+                    st.error(f"저장 중 오류가 발생했습니다: {e}")
 
         # 분석 결과 초기화 버튼 (폼 외부에 배치)
         if st.button("❌ 분석 결과 취소"):

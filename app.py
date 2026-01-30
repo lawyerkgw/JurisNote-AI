@@ -41,7 +41,8 @@ def get_ai_analysis(case_text):
         [JSON 구조]
         {{
             "categories": "1단계>2단계>3단계 | 1단계>2단계>3단계",
-            "title": "사건명",
+            "case_no": "사건번호 (예: 2023다12345)",
+            "title": "사건명 (예: 손해배상(기))",
             "date": "YYYY-MM-DD",
             "facts": "사실관계 요약",
             "issues": "법적 쟁점 (다수일 경우 번호 부여)",
@@ -97,22 +98,26 @@ if menu == "판례 분석 및 등록":
             st.warning("분석할 내용을 입력해주세요.")
 
     # AI 분석 결과가 세션에 있을 때만 편집 및 저장 화면 표시
+    # 분석 결과가 세션에 있을 때만 편집 및 저장 화면 표시
     if 'temp_res' in st.session_state:
         res = st.session_state['temp_res']
         st.markdown("---")
         st.subheader(f"🔍 AI 분석 결과 검토: {res['title']}")
-        
+    
         # 편집을 위한 양식(Form) 구성
         with st.form("edit_and_save_form"):
             col1, col2 = st.columns([1, 1])
-            
+        
             with col1:
+                # [수정] 사건번호를 ID로 사용하기 위한 입력칸 추가
+                final_case_no = st.text_input("🆔 사건번호 (데이터베이스 ID)", value=res.get('case_no', ''), help="대법원 사건번호(예: 2023다12345)가 정확한지 확인하세요.")
+                
                 st.caption("📖 **표준 분류 가이드**")
                 with st.expander("사용 가능 카테고리 보기"):
                     st.write(LEGAL_TAXONOMY)
+                
                 final_cats = st.text_input("📁 분류 (1단계>2단계>3단계 | 다중분류는 '|' 구분)", value=res['categories'])
                 final_facts = st.text_area("📍 사실관계 (사건의 경위)", value=res.get('facts', ''), height=150)
-                # 다중 쟁점 대응을 위해 넓은 칸 제공
                 final_issues = st.text_area("❓ 법적 쟁점 (쟁점이 여러 개인 경우 번호별 정리)", value=res.get('issues', ''), height=200)
                 final_laws = st.text_area("📜 관련법률 (직접 관련된 조문)", value=res.get('laws', ''), height=100)
                 
@@ -124,6 +129,8 @@ if menu == "판례 분석 및 등록":
                     target_date = datetime.now()
                 
                 final_date = st.date_input("📅 선고 일자", target_date)
+                # 사건명도 수정 가능하도록 배치
+                final_title = st.text_input("⚖️ 사건명", value=res['title'])
                 final_holdings = st.text_area("📢 판결요지 (법원의 판단 핵심)", value=res.get('holdings', ''), height=200)
                 final_insight = st.text_area("💡 실무적 의의 (유의사항 및 해설)", value=res.get('insight', ''), height=150)
                 case_url = st.text_input("🔗 판결문 원문 URL", placeholder="https://...")
@@ -133,15 +140,15 @@ if menu == "판례 분석 및 등록":
             
             # 저장 버튼
             submit_btn = st.form_submit_button("💾 데이터베이스에 최종 저장")
-
+    
             if submit_btn:
                 try:
-                    # 시트 저장 데이터 순서 업데이트 (A~K열: 11개 항목)
-                    # ID, 선고일자, 사건명, 분류, 사실관계, 쟁점, 관련법률, 판결요지, 실무적의의, 내메모, URL
+                    # [수정] ID 항목에 사건번호(final_case_no) 반영
+                    # 시트 저장 데이터 순서: ID(사건번호), 선고일자, 사건명, 분류, 사실관계, 쟁점, 관련법률, 판결요지, 실무적의의, 내메모, URL
                     row = [
-                        f"{final_date}_{res['title']}", # A: ID
-                        str(final_date),               # B: 선고일자
-                        res['title'],                   # C: 사건명
+                        final_case_no,                  # A: ID (사건번호)
+                        str(final_date),                # B: 선고일자
+                        final_title,                    # C: 사건명
                         final_cats,                     # D: 분류
                         final_facts,                    # E: 사실관계
                         final_issues,                   # F: 쟁점
@@ -154,14 +161,14 @@ if menu == "판례 분석 및 등록":
                     
                     if sheet:
                         sheet.append_row(row)
-                        st.success(f"✅ '{res['title']}' 판례가 성공적으로 저장되었습니다!")
+                        st.success(f"✅ '{final_case_no}' 판례가 성공적으로 저장되었습니다!")
                         # 저장 후 세션 초기화 및 페이지 새로고침
                         del st.session_state['temp_res']
                         st.rerun()
                     else:
                         st.error("구글 시트 연결을 확인해주세요.")
                 except Exception as e:
-                    st.error(f"저장 중 오류가 발생했습니다: {e}")
+                    st.error(f"저장 중 오류가 발생했습니다: {e}")}")
 
         # 분석 결과 초기화 버튼 (폼 외부에 배치)
         if st.button("❌ 분석 결과 취소"):
